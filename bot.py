@@ -26,19 +26,39 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # 🎰 Lista de prêmios
 premios = [
-    {"nome": "💎 Bicicleteira 24M/s", "chance": 1},
+    {"nome": "💎 Bicicleteira 14M/s", "chance": 1},
     {"nome": "✨ Secret 1-5M/s", "chance": 9},
     {"nome": "🔥 Brainrot 1-2M/s", "chance": 40},
     {"nome": "⚡ Brainrot 500K/s", "chance": 30},
     {"nome": "🥹 brainrot 10k - 400k", "chance": 20},
 ]
 
-def girar_roleta():
+# Dicionário para rastrear o pity counter por usuário
+pity_counters = {}
+
+def girar_roleta(user_id):
+    global pity_counters
+    
+    # Inicializar o contador de pity se não existir
+    if user_id not in pity_counters:
+        pity_counters[user_id] = 0
+    
+    # Verificar se o usuário atingiu o pity (20 giros sem ganhar o prêmio de 1%)
+    if pity_counters[user_id] >= 20:
+        pity_counters[user_id] = 0  # Resetar o contador
+        return "💎 Bicicleteira 14M/s"
+    
+    # Girar a roleta normalmente
     roll = random.uniform(0, 100)
     acumulado = 0
     for premio in premios:
         acumulado += premio["chance"]
         if roll <= acumulado:
+            # Se não ganhou o prêmio de 1%, incrementar o contador de pity
+            if premio["nome"] != "💎 Bicicleteira 14M/s":
+                pity_counters[user_id] += 1
+            else:
+                pity_counters[user_id] = 0  # Resetar se ganhou o prêmio raro
             return premio["nome"]
 
 # 🎯 Criar pagamento Pix no Mercado Pago (com SEU email)
@@ -188,11 +208,15 @@ class SelecionarGirosView(discord.ui.View):
                 if pagamento_status and pagamento_status.get("status") == "approved":
                     resultados = []
                     for _ in range(giros):
-                        resultado = girar_roleta()
+                        resultado = girar_roleta(str(interaction.user.id))
                         resultados.append(resultado)
                     
                     # Formatar resultados
                     resultados_formatados = "\n".join([f"🎲 Giro {i+1}: {resultado}" for i, resultado in enumerate(resultados)])
+                    
+                    # Mostrar contador de pity atual
+                    pity_atual = pity_counters.get(str(interaction.user.id), 0)
+                    info_pity = f"\n\n📊 Seu contador de pity: {pity_atual}/20"
                     
                     # 🔥 MENSAGEM PÚBLICA - Mostrar para todos o resultado
                     public_embed = discord.Embed(
@@ -210,7 +234,7 @@ class SelecionarGirosView(discord.ui.View):
                     # Mensagem privada de confirmação
                     result_embed = discord.Embed(
                         title="✅ Pagamento confirmado!",
-                        description=f"Seus prêmios ({giros} giros):\n\n{resultados_formatados}\n\nO resultado foi anunciado publicamente!",
+                        description=f"Seus prêmios ({giros} giros):\n\n{resultados_formatados}{info_pity}",
                         color=discord.Color.green()
                     )
                     await interaction.followup.send(embed=result_embed, ephemeral=True)
@@ -257,14 +281,14 @@ async def on_ready():
 async def roleta(ctx):
     embed = discord.Embed(
         title="🎰 Roleta da Sorte 🎲",
-        description="💵 Apenas R$ 1,00 por giro!\n✨ Concorrendo a **Bicicleteira** e vários outros prêmios!",
+        description="💵 Apenas R$ 1,00 por giro!\n✨ Concorrendo a **Bicicleteira** e vários outros prêmios!\n\n🎯 **Sistema de Pity**: Garantia de ganhar a Bicicleteira a cada 20 giros!",
         color=discord.Color.red()
     )
-    embed.add_field(name="🏆 Melhor prêmio", value="💎 Bicicleteira 24M/s", inline=False)
+    embed.add_field(name="🏆 Melhor prêmio", value="💎 Bicicleteira 14M/s", inline=False)
     embed.add_field(name="💰 Preços", value="1 Giro = R$ 1,00\n3 Giros = R$ 3,00\n5 Giros = R$ 5,00\n10 Giros = R$ 10,00\n20 Giros = R$ 20,00", inline=False)
-    embed.add_field(name="⚠️ Dificuldade", value="🔴 Hard", inline=False)
+    embed.add_field(name="🎯 Sistema de Pity", value="Seu contador de pity aumenta a cada giro sem ganhar a Bicicleteira. Ao atingir 20, você garante o prêmio!", inline=False)
 
-    lista_premios = "\n".join([f"{p['nome']}" for p in premios])
+    lista_premios = "\n".join([f"{p['nome']} ({p['chance']}% chance)" for p in premios])
     embed.add_field(name="🎁 Prêmios disponíveis", value=lista_premios, inline=False)
 
     embed.set_image(url="https://i.ytimg.com/vi/Nk5Kxp0xWRk/maxresdefault.jpg")
@@ -272,6 +296,30 @@ async def roleta(ctx):
 
     await ctx.send(embed=embed, view=SelecionarGirosView())
     await ctx.send("📩 Precisa de ajuda?", view=SuporteView())
+
+# Comando para verificar pity atual
+@bot.command()
+async def pity(ctx):
+    user_id = str(ctx.author.id)
+    pity_atual = pity_counters.get(user_id, 0)
+    
+    embed = discord.Embed(
+        title="📊 Seu Contador de Pity",
+        description=f"Seu contador atual: **{pity_atual}/20**",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="🎯 Como funciona?",
+        value="A cada giro sem ganhar a **💎 Bicicleteira 14M/s**, seu contador aumenta. Ao atingir 20, você garante este prêmio no próximo giro!",
+        inline=False
+    )
+    embed.add_field(
+        name="💡 Dica",
+        value="Quanto mais giros você fizer, mais chances tem de ganhar prêmios raros!",
+        inline=False
+    )
+    
+    await ctx.send(embed=embed)
 
 # Comando de ajuda tradicional
 @bot.command()
@@ -289,6 +337,11 @@ async def ajuda(ctx):
     embed.add_field(
         name="💳 Como pagar",
         value="1. Selecione quantos giros quer\n2. Copie o código PIX ou escaneie o QR Code\n3. Pague o valor total no seu app bancário\n4. Aguarde a confirmação automática",
+        inline=False
+    )
+    embed.add_field(
+        name="🎯 Sistema de Pity",
+        value="Use `!pity` para ver seu contador atual. A cada 20 giros sem ganhar a Bicicleteira, você garante este prêmio!",
         inline=False
     )
     embed.add_field(
